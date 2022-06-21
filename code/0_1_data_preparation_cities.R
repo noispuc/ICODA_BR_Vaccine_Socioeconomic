@@ -84,6 +84,32 @@ df_covid_sivep <-
     )
 
 
+## SIVEP Data
+df_covid_sivep_pre_vacc <- 
+    left_join(
+        data.table::fread("input/df_sivep_covid_2021_08_31.csv.gz", na.strings = c("NA", "")) %>% 
+            filter(date_sint < "2021-01-01") %>% 
+            as_tibble() %>% 
+            group_by(CO_MUN_RES, idade_grupo, CS_SEXO) %>% 
+            summarise(
+                hosp_adm = n()
+            ),
+        data.table::fread("input/df_sivep_covid_2021_08_31.csv.gz", na.strings = c("NA", "")) %>% 
+            filter(date_sint < "2021-01-01") %>% 
+            as_tibble() %>% 
+            filter(EVOLUCAO == "Death") %>% 
+            group_by(CO_MUN_RES, idade_grupo, CS_SEXO) %>% 
+            summarise(
+                hosp_death = n()
+            )
+    )    %>% 
+    ungroup() %>% 
+    mutate(
+        hosp_adm = if_else(is.na(hosp_adm), 0L, hosp_adm),
+        hosp_death = if_else(is.na(hosp_death), 0L, hosp_death),
+        CS_SEXO = stringr::str_to_lower(CS_SEXO)
+    )
+
 
 
 
@@ -153,6 +179,8 @@ df_dose_city_age_sex <-
         total_doses_D1_D2 = sum(total_D1_D2)
     ) %>%
     ungroup()
+
+
 
 ### Adjusting by age and sex from the BR population distribution
 df_dose_city_age_sex_adj <- 
@@ -341,8 +369,65 @@ df_covid_adm_br <-
         total_hosp_death_100k_age_sex = (sum(hosp_death_pop_exp) / sum(br_total_population)) * 100000
     ) %>%
     ungroup() %>% 
-    select(-c(city_total_pop))
+    select(-c(city_total_pop)) %>% 
+    select(cod_ibge, total_hosp_adm_100k_age_sex, total_hosp_death_100k_age_sex)
 
+
+df_covid_adm_br_pre_vacc <-
+    df_population_city_sex %>%
+    filter(!(idade_grupo %in% c("0-4", "5-9",
+                                "10-14", "15-19"))) %>% 
+    group_by(cod_ibge, sexo, idade_grupo) %>%
+    summarise(
+        city_total_population = sum(population)
+    ) %>% 
+    ungroup() %>% 
+    left_join(
+        df_population_city_sex %>% 
+            filter(!(idade_grupo %in% c("0-4", "5-9",
+                                        "10-14", "15-19"))) %>% 
+            group_by(sexo, idade_grupo) %>% 
+            summarise(
+                br_total_population = sum(population)
+            )
+        , by = c("sexo" = "sexo",
+                 "idade_grupo" = "idade_grupo")
+    ) %>% 
+    left_join(
+        df_covid_sivep_pre_vacc 
+        , by = c("cod_ibge" = "CO_MUN_RES", 
+                 "sexo" = "CS_SEXO",
+                 "idade_grupo" = "idade_grupo")
+    ) %>% 
+    mutate(
+        hosp_adm = if_else(is.na(hosp_adm), 0L, hosp_adm),
+        hosp_death = if_else(is.na(hosp_death), 0L, hosp_death)
+    ) %>% 
+    filter(!is.na(sexo)) %>% 
+    mutate(
+        hosp_adm_pop   = hosp_adm / city_total_population,
+        hosp_death_pop = hosp_death / city_total_population
+    ) %>%
+    mutate(
+        hosp_adm_pop_exp   = hosp_adm_pop * br_total_population,
+        hosp_death_pop_exp = hosp_death_pop * br_total_population
+    ) %>%
+    group_by(cod_ibge) %>%
+    summarise(
+        city_total_pop   = sum(city_total_population),
+        
+        total_hosp_adm   = sum(hosp_adm),
+        total_hosp_death = sum(hosp_death),
+        
+        total_hosp_adm_100k_crude     = (sum(hosp_adm)           / sum(city_total_population)) * 100000,
+        total_hosp_adm_100k_age_sex_2020   = (sum(hosp_adm_pop_exp)   / sum(br_total_population)) * 100000,
+        
+        total_hosp_death_100k_crude   = (sum(hosp_death)         / sum(city_total_population)) * 100000,
+        total_hosp_death_100k_age_sex_2020 = (sum(hosp_death_pop_exp) / sum(br_total_population)) * 100000
+    ) %>%
+    ungroup() %>% 
+    select(-c(city_total_pop)) %>% 
+    select(cod_ibge, total_hosp_adm_100k_age_sex_2020, total_hosp_death_100k_age_sex_2020)
 
 
 
@@ -385,13 +470,17 @@ df_city_vacc_sivep_info <-
         , by = c("codigo_ibge_6" = "cod_ibge")
     ) %>% 
     left_join(
+        df_covid_adm_br_pre_vacc 
+        , by = c("codigo_ibge_6" = "cod_ibge")
+    ) %>% 
+    left_join(
         df_covid_notif_br
         , by = c("codigo_ibge_6" = "city_ibge_code_6")
-    ) %>% 
+    ) %>%
     left_join(
         df_covid_notif_br_pre_vacc
         , by = c("codigo_ibge_6" = "city_ibge_code_6")
-    ) %>% 
+    ) %>%
     mutate(
         region = case_when(
             uf %in% c("SP", "RJ", "ES", "MG") ~ "Southeast",

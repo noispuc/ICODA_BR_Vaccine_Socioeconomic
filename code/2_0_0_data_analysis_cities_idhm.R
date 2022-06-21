@@ -134,18 +134,30 @@ tbl_svi_descriptive <-
         region = factor(region, 
                         levels = c("North", "Northeast", 
                                    "Central-West",
-                                   "Southeast", "South"))
+                                   "Southeast", "South")),
+        # ln_pop_area = log(pop_area),
+        # ln_total_hosp_adm_100k_age_sex_2020 = ifelse(is.infinite(log(total_hosp_adm_100k_age_sex_2020)), 0, log(total_hosp_adm_100k_age_sex_2020)),
+        metro_region = factor(rm, levels = c(0, 1), labels = c("No", "Yes")),
+        pop_size = cut_number(total_pop, n = 4)
         ) %>% 
     select(
         total_pop,
-        pop_cat, 
+        pop_size,
+        pop_area,
+        white,
+        black_brown,
+        asian,
+        indigenous,
         region,
         capital,
         dist_to_capital,
+        type_urban,
         gini, 
         idhm,
         pricare_cov,
         doses_pop_100_D1_age_sex,
+        total_hosp_adm_100k_age_sex_2020,
+        total_hosp_death_100k_age_sex_2020,
         total_hosp_adm_100k_age_sex,
         total_hosp_death_100k_age_sex,
         svi
@@ -222,33 +234,81 @@ df_model_vacc_vars <-
         region = factor(region,
                         levels = c("Northeast", "North", "Central-West",
                                    "Southeast", "South")),
-        codigo_ibge_6 = as.character(codigo_ibge_6)
+        codigo_ibge_6 = as.character(codigo_ibge_6),
+        ln_pop_area = log(pop_area),
+        ln_total_hosp_adm_100k_age_sex_2020 = ifelse(is.infinite(log(total_hosp_adm_100k_age_sex_2020)), 0, log(total_hosp_adm_100k_age_sex_2020)),
+        metro_region = factor(rm, levels = c(0, 1), labels = c("No", "Yes")),
+        pop_size = cut_number(total_pop, n = 4)
         ) %>% 
     filter(!is.na(svi)) 
 
 
 #### NB model
 ## Estimating RCS knots for modelling
-knot_pop  <- rcspline.eval(df_city_vacc_stats_filter$total_pop, knots.only = TRUE)
+# knot_pop  <- rcspline.eval(df_city_vacc_stats_filter$total_pop, knots.only = TRUE)
 knot_dist <- rcspline.eval(df_city_vacc_stats_filter$dist_to_capital, knots.only = TRUE)
 knot_gini <- rcspline.eval(df_city_vacc_stats_filter$gini, knots.only = TRUE)
+# knot_pop_area <- rcspline.eval(df_city_vacc_stats_filter$pop_area, knots.only = TRUE)
+# knot_cases <- rcspline.eval(df_city_vacc_stats_filter$confirmed_cases_100k_2020, knots.only = TRUE)
 
-## Estimating 
+## Estimating - Original Model
+# model_vacc_idhm_quartil <-
+#     MASS::glm.nb(
+#         y ~ quartil_idhm * pricare_cov_10_var +
+#             rcs(gini, parms = knot_gini) +
+#             rcs(total_pop, parms = knot_pop) +
+#             rcs(dist_to_capital, parms = knot_dist) +
+#             region +
+#             offset(log(total_pop)),
+#         data = df_model_vacc_vars %>%
+#             mutate(
+#                 pricare_cov_10_var = pricare_cov_10 - mean(pricare_cov_10)
+#             )
+#         )
+## Reduced model (R1)
+# model_vacc_idhm_quartil_red <-
+#     MASS::glm.nb(
+#         y ~ quartil_idhm * pricare_cov_10_var +
+#             # metro_region +
+#             ln_pop_area +
+#             ln_total_hosp_adm_100k_age_sex_2020 +
+#             # rcs(total_pop, parms = knot_pop) +
+#             # rcs(gini, parms = knot_gini) +
+#             # rcs(dist_to_capital, parms = knot_dist) +
+#             # region +
+#             offset(log(total_pop)),
+#         data = df_model_vacc_vars %>% 
+#             mutate(
+#                 pricare_cov_10_var = pricare_cov_10 - mean(pricare_cov_10)
+#             )
+#     )
+
+
+## Estimating -  Model after R1 (including new variables)
 model_vacc_idhm_quartil <-
     MASS::glm.nb(
         y ~ quartil_idhm * pricare_cov_10_var +
-            rcs(gini, parms = knot_gini) + 
-            rcs(total_pop, parms = knot_pop) +
-            rcs(dist_to_capital, parms = knot_dist) + 
-            region + 
-            offset(log(total_pop)),
-        data = df_model_vacc_vars %>% 
+            type_urban +
+            ln_pop_area +
+            ln_total_hosp_adm_100k_age_sex_2020 +
+            # rcs(pop_area, parms = knot_pop_area) +
+            # rcs(total_hosp_adm_100k_age_sex_2020, parms = knot_cases) +
+            pop_size +
+            # ns(gini) +
+            # ns(dist_to_capital) +
+            rcs(gini, parms = knot_gini) +
+            rcs(dist_to_capital, parms = knot_dist) +
+            region +
+            offset(log(total_pop))
+        , data = df_model_vacc_vars %>%
             mutate(
                 pricare_cov_10_var = pricare_cov_10 - mean(pricare_cov_10)
-            )
+            ) %>%
+            select(quartil_idhm, pricare_cov_10_var, metro_region, ln_pop_area, ln_total_hosp_adm_100k_age_sex_2020,
+                   gini, dist_to_capital, region, total_pop, y, type_urban, pop_size, pop_area,
+                   total_hosp_adm_100k_age_sex_2020) %>%
+            drop_na()
         )
-
-
 
 ## Obtaining estimates as RR
 df_model_vacc_idhm_quartil_estimates <- 
@@ -262,6 +322,7 @@ df_model_vacc_idhm_quartil_estimates <-
 
 
 writexl::write_xlsx(df_model_vacc_idhm_quartil_estimates, "output/df_model_vacc_idhm_quartil_estimates.xlsx")
+
 
 
 
@@ -305,7 +366,6 @@ plot_adj_pred_interaction <-
         color = "",
         fill  = "",
         x     = "Primary healthcare care coverage (%)",
-        # y     = "Predicted count of doses"
         y     = "First doses per 100 people"
         ) + 
     theme_classic() +
@@ -313,7 +373,7 @@ plot_adj_pred_interaction <-
         legend.position = "top"
         )
 
-ggsave("output/plot_adj_pred_interaction_D1_single.pdf", 
+ggsave("output/plot_adj_pred_interaction_D1_single_new.pdf", 
        plot_adj_pred_interaction, 
        units = "in", dpi = 800, width = 7, height = 5)
 
@@ -345,7 +405,6 @@ model_predict_gini <- ggemmeans(model_vacc_idhm_quartil,
 plot_adj_emmeans_gini <-
     model_predict_gini %>% 
     mutate(
-        # x = x + mean(df_model_vacc_vars$pricare_cov_10),
         predicted = predicted / avg_city_pop * 100,
         conf.low  = conf.low  / avg_city_pop * 100,
         conf.high = conf.high / avg_city_pop * 100
@@ -355,11 +414,6 @@ plot_adj_emmeans_gini <-
     geom_ribbon(aes(x = x, y = predicted, 
                     ymin = conf.low, 
                     ymax = conf.high, fill = group), alpha = 0.3) +
-    # scale_x_continuous(
-    #     breaks = seq(0, 10, 1),
-    #     labels = paste0(seq(0, 10, 1) * 10, "%", recycle0 = TRUE)
-    # ) +
-    # scale_y_continuous(labels = scales::comma_format()) +
     labs(
         color = "",
         fill  = "",
@@ -381,7 +435,6 @@ model_predict_dist <- ggemmeans(model_vacc_idhm_quartil,
 plot_adj_emmeans_dist <-
     model_predict_dist %>% 
     mutate(
-        # x = x + mean(df_model_vacc_vars$pricare_cov_10),
         predicted = predicted / avg_city_pop * 100,
         conf.low  = conf.low  / avg_city_pop * 100,
         conf.high = conf.high / avg_city_pop * 100
@@ -391,10 +444,6 @@ plot_adj_emmeans_dist <-
     geom_ribbon(aes(x = x, y = predicted, 
                     ymin = conf.low, 
                     ymax = conf.high, fill = group), alpha = 0.3) +
-    # scale_x_continuous(
-    #     breaks = seq(0, 10, 1),
-    #     labels = paste0(seq(0, 10, 1) * 10, "%", recycle0 = TRUE)
-    # ) +
     scale_y_continuous(labels = scales::comma_format()) +
     labs(
         color = "",
@@ -466,15 +515,20 @@ ggsave("output/plot_comb_emmeans_continuous.png", plot_comb_emmeans_continuous, 
 
 #### Estimating RR based on different PHC references
 model_vacc_idhm_quartil_cob_range <- 
-    sort(c(seq(0, 10, 0.5), mean(df_model_vacc_vars$pricare_cov_10))) %>% 
+    sort(c(seq(0, 10, 1), mean(df_model_vacc_vars$pricare_cov_10))) %>% 
     map_dfr(function(x) {
         model_est <- 
             MASS::glm.nb(
                 y ~ quartil_idhm * pricare_cov_10_var + 
-                    rcs(total_pop, parms = knot_pop) +
-                    rcs(dist_to_capital, parms = knot_dist) + 
+                    type_urban +
+                    ln_pop_area +
+                    ln_total_hosp_adm_100k_age_sex_2020 +
+                    # rcs(total_pop, parms = knot_pop) +
+                    pop_size +
                     rcs(gini, parms = knot_gini) +
-                    region + offset(log(total_pop)),
+                    rcs(dist_to_capital, parms = knot_dist) +
+                    region +
+                    offset(log(total_pop)),
                 
                 data = df_model_vacc_vars %>%
                     mutate(
@@ -587,7 +641,7 @@ ggsave("output/plot_margins_RR_groupHDI_D1_single.png", plot_margins_RR_groupHDI
 
 #### NB model
 ## Estimating RCS knots for modelling
-knot_pop  <- rcspline.eval(df_city_vacc_stats_filter$total_pop, knots.only = TRUE)
+# knot_pop  <- rcspline.eval(df_city_vacc_stats_filter$total_pop, knots.only = TRUE)
 knot_dist <- rcspline.eval(df_city_vacc_stats_filter$dist_to_capital, knots.only = TRUE)
 knot_gini <- rcspline.eval(df_city_vacc_stats_filter$gini, knots.only = TRUE)
 
@@ -596,10 +650,13 @@ knot_gini <- rcspline.eval(df_city_vacc_stats_filter$gini, knots.only = TRUE)
 model_vacc_idhm <-
     MASS::glm.nb(
         y ~ idhm_10 * pricare_cov_10_var + 
-            rcs(gini, parms = knot_gini) + 
-            rcs(total_pop, parms = knot_pop) +
-            rcs(dist_to_capital, parms = knot_dist) + 
-            region + 
+            type_urban +
+            ln_pop_area +
+            ln_total_hosp_adm_100k_age_sex_2020 +
+            pop_size +
+            rcs(gini, parms = knot_gini) +
+            rcs(dist_to_capital, parms = knot_dist) +
+            region +
             offset(log(total_pop)),
         data = df_model_vacc_vars %>% 
             mutate(
@@ -693,10 +750,13 @@ model_vacc_idhm_cob_range <-
         model_est <- 
             MASS::glm.nb(
                 y ~ idhm * pricare_cov_10_var + 
-                    rcs(gini, parms = knot_gini) + 
-                    rcs(total_pop, parms = knot_pop) +
-                    rcs(dist_to_capital, parms = knot_dist) + 
-                    region + 
+                    type_urban +
+                    ln_pop_area +
+                    ln_total_hosp_adm_100k_age_sex_2020 +
+                    pop_size +
+                    rcs(gini, parms = knot_gini) +
+                    rcs(dist_to_capital, parms = knot_dist) +
+                    region +
                     offset(log(total_pop)),    
                 data = df_model_vacc_vars %>%
                     mutate(

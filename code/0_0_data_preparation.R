@@ -18,22 +18,45 @@ df_socioeco <-
         cod_ibge_6 = COD6,
         rm = RM,
         gini = GINI,
-        pib_cap = PIB_P_CAP) %>% 
+        pib_cap = PIB_P_CAP,
+        area_km2 = AREA
+        ) %>% 
     mutate(
         cod_ibge = as.character(cod_ibge),
         cod_ibge_6 = as.character(cod_ibge_6),
         gini = as.numeric(stringr::str_replace(gini, ",", "."))
-    )
+    ) 
 
 df_socioeco_extra <- 
     read_csv("data/vacceq_svi.csv") %>% 
     select(
-        codmun, idhm, idhm_educ, idhm_long, idhm_renda, dist_to_capital, svi_original
+        codmun, idhm, idhm_educ, idhm_long, idhm_renda, dist_to_capital, 
+        perc_votos_bolso, svi_original
     ) %>% 
     mutate(
         codmun = as.character(codmun)
     )
 
+df_ibge_socio <- 
+    readxl::read_excel("data/prop_raca_ibge_2010.xlsx") %>% 
+    mutate(
+        cod_ibge_6 = stringr::str_sub(cod_ibge, 1, 6),
+        black_brown = Preta + Parda
+    ) %>% 
+    select(
+        cod_ibge_6, white = Branca, black_brown, asian = Amarela,  indigenous = Indígena
+    )
+
+
+df_dados_rural <- readxl::read_excel("data/Tipologia_municipal_rural_urbano.xlsx", sheet = 2) %>% 
+    mutate(
+        cod_ibge_6 = stringr::str_sub(CD_GCMUN, 1, 6),
+        type_urban = case_when(
+            str_detect(TIPO, "Rural") ~ "Rural",
+            str_detect(TIPO, "Intermediario") ~ "Semi-Urban",
+            TIPO == "Urbano" ~ "Urban"
+        )
+    )
 
 df_dados_ab_2019 <- 
     readxl::read_xlsx("data/Historico-AB-MUNICIPIOS-2007-202012.xlsx", sheet = "2019") %>% 
@@ -66,10 +89,7 @@ df_dados_ab_2019 <-
     )
 
 
-
-################################################################################
-### Municipality data references
-df_br_cities_info <- 
+df_city_general_info <- 
     read_csv("https://raw.githubusercontent.com/kelvins/Municipios-Brasileiros/main/csv/municipios.csv") %>% 
     left_join(
         read_csv("https://raw.githubusercontent.com/kelvins/Municipios-Brasileiros/main/csv/estados.csv") %>% 
@@ -78,25 +98,10 @@ df_br_cities_info <-
     ) %>% 
     mutate(
         codigo_ibge_6 = stringr::str_sub(codigo_ibge, 1, 6)
-    ) %>% 
-    left_join(
-        df_socioeco
-        , by = c("codigo_ibge_6" = "cod_ibge_6")
-        ) %>% 
-    left_join(
-        df_socioeco_extra
-        , by = c("codigo_ibge_6" = "codmun")
-        ) %>% 
-    left_join(
-        df_dados_ab_2019
-        , by = c("codigo_ibge_6" = "cod_ibge")
-    ) 
+    )
 
 
-write_csv(df_br_cities_info, "input/df_br_cities_info.csv")
-
-
-
+################################################################################
 ### Population per city - per Sex
 df_population_city_sex <- 
     bind_rows(
@@ -131,13 +136,56 @@ df_population_city_sex <-
         cod_ibge = as.character(cod_ibge) 
     ) %>% 
     left_join(
-        df_br_cities_info %>% 
+        df_city_general_info %>% 
             select(codigo_ibge_6, uf),
         by = c("cod_ibge" = "codigo_ibge_6")
     )
 
 # write_csv(df_pnad_population_city_sex, "input/df_pnad_population_city_sex.csv")
 data.table::fwrite(df_population_city_sex, "input/df_population_city_sex.csv")
+
+
+
+### Municipality data references
+df_br_cities_info <- 
+    df_city_general_info %>% 
+    left_join(
+        df_socioeco
+        , by = c("codigo_ibge_6" = "cod_ibge_6")
+        ) %>%
+    left_join(
+        df_ibge_socio
+        , by = c("codigo_ibge_6" = "cod_ibge_6")
+    ) %>% 
+    left_join(
+        df_socioeco_extra
+        , by = c("codigo_ibge_6" = "codmun")
+        ) %>% 
+    left_join(
+        df_dados_ab_2019
+        , by = c("codigo_ibge_6" = "cod_ibge")
+        ) %>% 
+    left_join(
+        df_dados_rural %>% 
+            select(cod_ibge_6, type_urban),
+        by = c("codigo_ibge_6" = "cod_ibge_6")
+    ) %>% 
+    left_join(
+        df_population_city_sex %>% 
+            group_by(cod_ibge) %>% 
+            summarise(
+                population_2020 = sum(population)
+            ),
+        by = c("codigo_ibge_6" = "cod_ibge")
+        ) %>% 
+    mutate(
+        pop_area = population_2020 / area_km2
+    )
+
+
+write_csv(df_br_cities_info, "input/df_br_cities_info.csv")
+
+
 
 ### Population per city (PNAD) - All sexes
 # df_pnad_population_city <-
@@ -155,25 +203,25 @@ data.table::fwrite(df_population_city_sex, "input/df_population_city_sex.csv")
 
 ################################################################################
 ### COVID-19 confirmed cases (Brasil.io)
-# df_covid_cases_city <-
-#     data.table::fread("https://data.brasil.io/dataset/covid19/caso_full.csv.gz",
-#                       na.strings = c("NA", ""), encoding = "UTF-8") %>%
-#     as_tibble() %>%
-#     # filter(date >= as.Date("2021-01-01")) %>% 
-#     filter(
-#         date <= as.Date(date_limit),
-#         place_type == "city",
-#         !is.na(city_ibge_code)
-#         ) %>% 
-#     mutate(
-#         city_ibge_code = case_when(
-#             state == "DF" ~ 5300108L,
-#             TRUE ~ city_ibge_code
-#         )
-#     )
-# 
-# data.table::fwrite(df_covid_cases_city, 
-#                    "input/df_covid_cases_city_2021-08-31.csv.gz")
+df_covid_cases_city <-
+    data.table::fread("https://data.brasil.io/dataset/covid19/caso_full.csv.gz",
+                      na.strings = c("NA", ""), encoding = "UTF-8") %>%
+    as_tibble() %>%
+    # filter(date >= as.Date("2021-01-01")) %>%
+    filter(
+        date <= as.Date(date_limit),
+        place_type == "city",
+        !is.na(city_ibge_code)
+        ) %>%
+    mutate(
+        city_ibge_code = case_when(
+            state == "DF" ~ 5300108L,
+            TRUE ~ city_ibge_code
+        )
+    )
+
+data.table::fwrite(df_covid_cases_city,
+                   "input/df_covid_cases_city_2021-08-31.csv.gz")
 
 
 
