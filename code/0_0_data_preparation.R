@@ -30,23 +30,22 @@ df_socioeco <-
 df_socioeco_extra <- 
     read_csv("data/vacceq_svi.csv") %>% 
     select(
-        codmun, idhm, idhm_educ, idhm_long, idhm_renda, dist_to_capital, 
-        perc_votos_bolso, svi_original
+        codmun, idhm, idhm_educ, idhm_long, idhm_renda, dist_to_capital
+        # perc_votos_bolso
     ) %>% 
     mutate(
         codmun = as.character(codmun)
     )
-
-df_ibge_socio <- 
-    readxl::read_excel("data/prop_raca_ibge_2010.xlsx") %>% 
+# 
+df_ibge_socio <-
+    readxl::read_excel("data/prop_raca_ibge_2010.xlsx") %>%
     mutate(
         cod_ibge_6 = stringr::str_sub(cod_ibge, 1, 6),
         black_brown = Preta + Parda
-    ) %>% 
+    ) %>%
     select(
         cod_ibge_6, white = Branca, black_brown, asian = Amarela,  indigenous = Indígena
     )
-
 
 df_dados_rural <- readxl::read_excel("data/Tipologia_municipal_rural_urbano.xlsx", sheet = 2) %>% 
     mutate(
@@ -57,6 +56,15 @@ df_dados_rural <- readxl::read_excel("data/Tipologia_municipal_rural_urbano.xlsx
             TIPO == "Urbano" ~ "Urban"
         )
     )
+
+df_cnes_prof <-
+    data.table::fread("data/cnes_pf_2021-01.csv", na.strings = c("NA", "")) %>%
+    as_tibble() %>% 
+    mutate(
+        codufmun = as.character(codufmun)
+    )
+
+
 
 df_dados_ab_2019 <- 
     readxl::read_xlsx("data/Historico-AB-MUNICIPIOS-2007-202012.xlsx", sheet = "2019") %>% 
@@ -86,6 +94,9 @@ df_dados_ab_2019 <-
     mutate(
         pricare_cov_hab =  (qt_pricare_fhs_team / qt_populacao) * 3000,
         pricare_cov_calc =  (qt_pricare_fhs_team * 3000) / qt_populacao
+    ) %>% 
+    select(
+        cod_ibge, pricare_cov, fhs_cov
     )
 
 
@@ -98,19 +109,33 @@ df_city_general_info <-
     ) %>% 
     mutate(
         codigo_ibge_6 = stringr::str_sub(codigo_ibge, 1, 6)
-    )
+    ) %>% 
+    select(codigo_ibge, codigo_ibge_6, nome, capital, uf, nome_uf)
+
+
+
 
 
 ################################################################################
 ### Population per city - per Sex
 df_population_city_sex <- 
     bind_rows(
-        data.table::fread("data/population_MS_age_male_2020.csv", na.strings = c("NA", "")) %>% 
+        # data.table::fread("data/population_MS_age_male_2020.csv", na.strings = c("NA", "")) %>% 
+        #     as_tibble() %>% 
+        #     mutate(
+        #         sexo = "male"
+        #     ),
+        # data.table::fread("data/population_MS_age_female_2020.csv", na.strings = c("NA", "")) %>% 
+        #     as_tibble() %>% 
+        #     mutate(
+        #         sexo = "female"
+        #     )
+        read_csv2("data/population_MS_age_male_2020.csv", locale = locale(encoding = "WINDOWS-1252")) %>% 
             as_tibble() %>% 
             mutate(
                 sexo = "male"
             ),
-        data.table::fread("data/population_MS_age_female_2020.csv", na.strings = c("NA", "")) %>% 
+        read_csv2("data/population_MS_age_female_2020.csv", locale = locale(encoding = "WINDOWS-1252")) %>% 
             as_tibble() %>% 
             mutate(
                 sexo = "female"
@@ -156,7 +181,7 @@ df_br_cities_info <-
     left_join(
         df_ibge_socio
         , by = c("codigo_ibge_6" = "cod_ibge_6")
-    ) %>% 
+    ) %>%
     left_join(
         df_socioeco_extra
         , by = c("codigo_ibge_6" = "codmun")
@@ -164,6 +189,11 @@ df_br_cities_info <-
     left_join(
         df_dados_ab_2019
         , by = c("codigo_ibge_6" = "cod_ibge")
+        ) %>% 
+    left_join(
+        df_cnes_prof %>% 
+            select(codufmun, qt_hcw = count)
+        , by = c("codigo_ibge_6" = "codufmun")
         ) %>% 
     left_join(
         df_dados_rural %>% 
@@ -179,11 +209,16 @@ df_br_cities_info <-
         by = c("codigo_ibge_6" = "cod_ibge")
         ) %>% 
     mutate(
-        pop_area = population_2020 / area_km2
+        pop_area = population_2020 / area_km2,
+        hcw_100k = (qt_hcw / population_2020) * 10000
     )
 
 
-write_csv(df_br_cities_info, "input/df_br_cities_info.csv")
+# write_excel_csv(df_br_cities_info, "input/df_br_cities_info.csv")
+
+data.table::fwrite(df_br_cities_info,
+                   "input/df_br_cities_info.csv")
+
 
 
 
@@ -228,9 +263,10 @@ data.table::fwrite(df_covid_cases_city,
 ################################################################################
 ### Vaccine Data
 df_vaccine_br_city <- 
-    data.table::fread("data/vw_vacc_date_city_age_dose_2022-01-10.csv.gz",
+    data.table::fread("data/vw_vacc_date_city_age_dose_2021-12-31.csv.gz",
                       na.strings = c("NA", "")) %>%
-    as_tibble() %>%    
+    as_tibble() %>%
+    # filter(categoria_grupo == "faixa_etaria") %>% 
     mutate(
         uf = if_else(uf %in% c("XX", ""), NA_character_, uf),
         cidade_resid_ibge = case_when(
@@ -280,7 +316,7 @@ data.table::fwrite(df_vaccine_br_city,
 # SIVEP - COVID-19 hospitalizations and in-hospital deaths ----------------
 
 df_sivep_covid <- 
-    data.table::fread("data/srag_adults_covid_hosp_2022-02-07.csv.gz",
+    data.table::fread("data/srag_adults_covid_hosp_2022-06-20.csv.gz",
                       na.strings = c("NA", "")) %>%
     as_tibble() %>% 
     filter(date_sint <= as.Date(date_limit)) %>%
@@ -304,4 +340,37 @@ df_sivep_covid <-
            idade_grupo, CS_SEXO, EVOLUCAO)
 
 data.table::fwrite(df_sivep_covid, "input/df_sivep_covid_2021_08_31.csv.gz")
+
+
+
+df_sivep_covid_daily <-
+    left_join(
+        data.table::fread("data/srag_adults_covid_hosp_2022-06-20.csv.gz",
+                          na.strings = c("NA", "")) %>%
+            as_tibble() %>%
+            filter(between(date_sint, as.Date("2020-02-16"), as.Date(date_limit))) %>%
+            group_by(date = date_sint) %>%
+            summarise(
+                hosp_adm = n()
+            ),
+        
+        data.table::fread("data/srag_adults_covid_hosp_2022-06-20.csv.gz",
+                          na.strings = c("NA", "")) %>%
+            as_tibble() %>%
+            filter(EVOLUCAO == "Death") %>%
+            filter(between(date_sint, as.Date("2020-02-16"), as.Date(date_limit))) %>%
+            group_by(date = date_desf) %>%
+            summarise(
+                hosp_deaths = n()
+            ),
+        by = "date"
+    ) %>%
+    mutate(
+        hosp_adm = if_else(is.na(hosp_adm), 0L, hosp_adm),
+        hosp_deaths = if_else(is.na(hosp_deaths), 0L, hosp_deaths)
+    )
+
+
+write_csv(df_sivep_covid_daily, "input/df_sivep_covid_daily_2021_08_31.csv.gz")
+
 

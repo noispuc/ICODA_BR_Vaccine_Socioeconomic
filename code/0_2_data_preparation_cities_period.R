@@ -119,7 +119,8 @@ df_br_cities_pop_adults <-
     filter(!(idade_grupo %in% c("0-4", "5-9", "10-14", "15-19"))) %>% 
     group_by(cod_ibge) %>% 
     summarise(
-        total_pop_adult = sum(population)
+        # total_pop_adult = sum(population)
+        population_adult_2020 = sum(population)
     )
 
 
@@ -354,10 +355,10 @@ rm(df_vaccine_br_city)
 ## Merging tables
 df_city_vacc_sivep_info <- 
     df_br_cities_info %>% 
-    left_join(
-        df_br_cities_pop
-        , by = c("codigo_ibge_6" = "cod_ibge")
-    ) %>% 
+    # left_join(
+    #     df_br_cities_pop
+    #     , by = c("codigo_ibge_6" = "cod_ibge")
+    # ) %>% 
     left_join(
         df_br_cities_pop_adults
         , by = c("codigo_ibge_6" = "cod_ibge")

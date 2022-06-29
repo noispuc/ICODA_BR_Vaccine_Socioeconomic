@@ -6,21 +6,9 @@
 library(tidyverse)
 
 # Data Input --------------------------------------------------------------
-### BR cities - socioeconmic info
-# df_br_cities_info_socio <- 
-#     read_csv("data/vacceq_svi.csv") 
-
-
 ### BR cities - general info + socioeconomic info
 df_br_cities_info <- 
     read_csv("input/df_br_cities_info.csv")
-    # %>% 
-    # select(codigo_ibge, codigo_ibge_6, codigo_uf, uf, nome, 
-    #        capital, gini, rm, pib_cap) %>% 
-    # left_join(
-    #     df_br_cities_info_socio
-        # , by = c("codigo_ibge_6" = "codmun")
-    # )
 
 
 ### Population per city and Sex 
@@ -47,9 +35,12 @@ df_covid_cases_city <-
 
     
 ### Vaccine Data
+
+# All vaccine doses
 df_vaccine_br_city <- 
     data.table::fread("input/df_vaccine_br_city_2021_08_31.csv.gz", na.strings = c("NA", "")) %>% 
     as_tibble() %>% 
+    # filter(idade_grupo %in% c("60-69", "70-79", "80+")) %>% 
     mutate(vacina_dose_agg = vacina_dose1_agg) %>% ## Adding D1 + Single
     group_by(uf, cidade_resid_ibge, sexo, idade_grupo, vacina, vacina_dose_agg) %>% 
     summarise(
@@ -58,8 +49,23 @@ df_vaccine_br_city <-
     ungroup() %>% 
     filter(!is.na(cidade_resid_ibge))
 
+# # Vaccine doses for HCW and Comorbidity groups
+# df_vaccine_br_city_groups <- 
+#     data.table::fread("input/df_vaccine_br_city_2021_08_31.gz", na.strings = c("NA", "")) %>% 
+#     as_tibble() %>% 
+#     # filter(idade_grupo %in% c("60-69", "70-79", "80+")) %>% 
+#     mutate(vacina_dose_agg = vacina_dose1_agg) %>% ## Adding D1 + Single
+#     group_by(uf, cidade_resid_ibge, sexo, categoria_grupo, vacina, vacina_dose_agg) %>% 
+#     summarise(
+#         total = sum(total)
+#     ) %>% 
+#     ungroup() %>% 
+#     filter(!is.na(cidade_resid_ibge)) %>% 
+#     filter(categoria_grupo %in% c("hcw", "comorbidities"))
+# 
 
-## SIVEP Data
+
+## SIVEP Data - All period
 df_covid_sivep <- 
     left_join(
         data.table::fread("input/df_sivep_covid_2021_08_31.csv.gz", na.strings = c("NA", "")) %>% 
@@ -84,7 +90,7 @@ df_covid_sivep <-
     )
 
 
-## SIVEP Data
+## SIVEP Data - Pre-vaccination 
 df_covid_sivep_pre_vacc <- 
     left_join(
         data.table::fread("input/df_sivep_covid_2021_08_31.csv.gz", na.strings = c("NA", "")) %>% 
@@ -112,6 +118,9 @@ df_covid_sivep_pre_vacc <-
 
 
 
+df_cnes_prof <- 
+    data.table::fread("data/cnes_pf_2021-01.csv", na.strings = c("NA", "")) %>% 
+    as_tibble()
 
 
 
@@ -133,7 +142,7 @@ df_br_cities_pop_adults <-
     filter(!(idade_grupo %in% c("0-4", "5-9", "10-14", "15-19"))) %>% 
     group_by(cod_ibge) %>% 
     summarise(
-        total_pop_adult = sum(population)
+        population_adult_2020 = sum(population)
     )
 
 
@@ -158,6 +167,16 @@ df_dose_city <-
     ) %>% 
     select(-D1_single_new)
 
+# 
+# df_dose_city_hcw <- 
+#     df_vaccine_br_city_hcw %>% 
+#     filter(vacina_dose_agg == "D1_single") %>% 
+#     group_by(uf, cidade_resid_ibge, categoria_grupo) %>% 
+#     summarise(
+#         total_doses = sum(total_hcw)
+#     ) %>% 
+#     pivot_wider(names_from = "categoria_grupo", values_from = "total_doses", names_prefix = "D1_single_") %>% 
+#     ungroup()
 
 
 
@@ -185,6 +204,7 @@ df_dose_city_age_sex <-
 ### Adjusting by age and sex from the BR population distribution
 df_dose_city_age_sex_adj <- 
     df_population_city_sex %>%
+    # filter(idade_grupo %in% c("60-69", "70-79", "80+")) %>% 
     group_by(cod_ibge, sexo, idade_grupo) %>%
     summarise(
         city_total_population = sum(population)
@@ -246,10 +266,6 @@ df_dose_city_age_sex_adj <-
         doses_pop_100_D1_D2_age_sex = (doses_exp_D1_d2_total / br_total_pop) * 100
     ) %>% 
     select(-c(city_total_pop, br_total_pop))
-
-
-
-
 
 
 
@@ -441,19 +457,24 @@ rm(df_vaccine_br_city)
 ## Merging tables
 df_city_vacc_sivep_info <- 
     df_br_cities_info %>% 
-    left_join(
-        df_br_cities_pop
-        , by = c("codigo_ibge_6" = "cod_ibge")
-    ) %>% 
+    # left_join(
+    #     df_br_cities_pop
+    #     , by = c("codigo_ibge_6" = "cod_ibge")
+    # ) %>% 
     left_join(
         df_br_cities_pop_adults
         , by = c("codigo_ibge_6" = "cod_ibge")
     ) %>% 
-    left_join(
-        df_dose_city %>% 
-            select(-uf)
-        , by = c("codigo_ibge_6" = "cidade_resid_ibge")
-    ) %>% 
+    # left_join(
+    #     df_dose_city %>% 
+    #         select(-uf)
+    #     , by = c("codigo_ibge_6" = "cidade_resid_ibge")
+    # ) %>% 
+    # left_join(
+    #     df_dose_city_hcw %>% 
+    #         select(-uf)
+    #     , by = c("codigo_ibge_6" = "cidade_resid_ibge")
+    # ) %>% 
     left_join(
         df_dose_city_age_sex_adj
         , by = c("codigo_ibge_6" = "cod_ibge")
@@ -489,9 +510,19 @@ df_city_vacc_sivep_info <-
             uf %in% c("AM", "AP", "TO", "PA", "RO", "RR", "AC") ~ "North",
             uf %in% c("BA", "AL", "SE", "PE", "MA", "RN", "PB", "CE", "PI") ~ "Northeast"
             )
+        ) %>% 
+    mutate(
+        doses_pop_100_D1_age_sex = if_else(doses_pop_100_D1_age_sex > 100, 100, doses_pop_100_D1_age_sex),
+        hdi_group = cut_number(idhm, 3, labels = FALSE),
+        hdi = factor(hdi_group, 
+                     levels = c(1, 2, 3),
+                     labels = c("Low HDI",
+                                "Medium HDI",
+                                "High HDI")
         )
+    )
 
 
 
 
-write_csv(df_city_vacc_sivep_info, "input/df_city_vacc_adm_sivep_D1_single.csv")
+write_csv(df_city_vacc_sivep_info, "input/df_city_vacc_adm_sivep_D1_single_2021-08-31.csv")

@@ -6,211 +6,17 @@
 library(tidyverse)
 
 # Data Input --------------------------------------------------------------
-df_city_vacc_sivep_info <-  read_csv("input/df_city_vacc_adm_sivep_D1_single.csv")
-
-
-
-
-
-################################################################################
-#### Plot - Age-and-sex-adj doses per 100 pop. and HDI
-df_city_vacc_stats_filter <- 
-    df_city_vacc_sivep_info %>% 
+df_city_vacc_sivep_info <-  read_csv("input/df_city_vacc_adm_sivep_D1_single_2021-08-31.csv") %>%
     mutate(
-        doses_pop_100_D1_age_sex = if_else(doses_pop_100_D1_age_sex > 100, 100, doses_pop_100_D1_age_sex),
-        svi_group = cut_number(idhm, 3, labels = FALSE),
-        svi = factor(svi_group, 
+        hdi = factor(hdi_group, 
                      levels = c(1, 2, 3),
                      labels = c("Low HDI",
                                 "Medium HDI",
                                 "High HDI")
                      )
-        ) 
-
-
-write_csv(df_city_vacc_stats_filter,
-          "input/df_city_vacc_adm_sivep_hdi_D1_single.csv")
-
-
-### Violin plots and Beeswarm plots
-library(patchwork)
-library(ggbeeswarm)
-
-plot_city_vacc_svi <- 
-    df_city_vacc_stats_filter %>% 
-    drop_na() %>% 
-    ggplot() +
-    geom_violin(aes(x = svi, y = doses_pop_100_D1_age_sex), 
-                draw_quantiles = 0.5, fill = NA) +
-    labs(
-        x = "",
-        y = "Age-and-sex-adjusted\ndoses/100 people"
-    ) +
-    theme_classic()
-
-df_median_vals <- 
-    df_city_vacc_stats_filter %>% 
-    filter(!is.na(svi)) %>%
-    mutate(
-        region = factor(region, 
-                        levels = c("North", "Northeast", "Central-West",
-                                   "Southeast", "South"))
-    ) %>% 
-    group_by(svi) %>% 
-    summarise(
-        dose_median    = median(doses_pop_100_D1_age_sex)
-    )
-
-plot_params <- 
-    list(shape = 21, 
-         alpha = 0.6,
-         cex = 0.8,                    # "distance" of the points
-         priority = "none",    # you can play with the sorting as well
-         groupOnX = FALSE,
-         dodge.width = 0.8,
-         
-         line_width = 0.8
-    )
-
-
-plot_bee_vacc_svi <-
-    df_city_vacc_stats_filter %>% 
-    filter(!is.na(svi)) %>%
-    mutate(
-        region = factor(region, 
-                        levels = c("North", "Northeast", 
-                                   "Central-West",
-                                   "Southeast", "South"))
-    ) %>% 
-    ggplot() +
-    ggbeeswarm::geom_beeswarm(
-        aes(y = svi, x = doses_pop_100_D1_age_sex, 
-            fill = region, size = total_pop),
-        shape = plot_params[[1]], 
-        alpha = plot_params[[2]],
-        cex = plot_params[[3]],                    # "distance" of the points
-        priority = plot_params[[4]],    # you can play with the sorting as well
-        groupOnX = plot_params[[5]],
-        dodge.width = plot_params[[6]]
-    ) +
-    scale_fill_discrete(name = "") +
-    scale_size(range = c(1, 20), guide = "none") +
-    geom_boxplot(data = df_median_vals,
-                 aes(y = svi, x = dose_median), size = plot_params[[7]], width = 3) +
-    labs(
-        y = "",
-        x = "Age-and-sex-adjusted first doses/100 people"
-    ) +
-    theme_minimal() +
-    theme(legend.position = "top")
-
-
-plot_bee_svi_comb_box_bee <-
-    (
-        plot_city_vacc_svi + plot_bee_vacc_svi
-        ) +
-    plot_annotation(tag_levels = "A") + 
-    plot_layout(widths = c(1, 1)) 
-
-ggsave("output/plot_bee_svi_comb_box_bee_svi_idhm_quartil_D1_single.png",
-       plot_bee_svi_comb_box_bee,
-       width = 12, height = 5, units = "in", dpi = 800)
-
-
-
-
-
-
-
-################################################################################
-#### Descriptive Table of doses/100 hab
-library(gtsummary)
-
-tbl_svi_descriptive <-
-    df_city_vacc_stats_filter %>% 
-    mutate(
-        pop_cat = cut_number(total_pop, n = 4),
-        dist_capital_cat = cut_number(dist_to_capital, n = 4),
-        region = factor(region, 
-                        levels = c("North", "Northeast", 
-                                   "Central-West",
-                                   "Southeast", "South")),
-        # ln_pop_area = log(pop_area),
-        # ln_total_hosp_adm_100k_age_sex_2020 = ifelse(is.infinite(log(total_hosp_adm_100k_age_sex_2020)), 0, log(total_hosp_adm_100k_age_sex_2020)),
-        metro_region = factor(rm, levels = c(0, 1), labels = c("No", "Yes")),
-        pop_size = cut_number(total_pop, n = 4)
-        ) %>% 
-    select(
-        total_pop,
-        pop_size,
-        pop_area,
-        white,
-        black_brown,
-        asian,
-        indigenous,
-        region,
-        capital,
-        dist_to_capital,
-        type_urban,
-        gini, 
-        idhm,
-        pricare_cov,
-        doses_pop_100_D1_age_sex,
-        total_hosp_adm_100k_age_sex_2020,
-        total_hosp_death_100k_age_sex_2020,
-        total_hosp_adm_100k_age_sex,
-        total_hosp_death_100k_age_sex,
-        svi
-    ) %>%
-    tbl_summary(
-        by = "svi"
-        ) %>% 
-    add_overall()
-
-flextable::save_as_docx(
-    as_flex_table(tbl_svi_descriptive), 
-    path = "output/desc_table_city_SVI_group_D1_single_idh_quartil.docx"
-    )
-
-
-
-
-
-
-
-
-################################################################################
-#### Plots - vaccine doses and socioeconomic variables -----------
-### HDI
-plot_city_vacc_hdi <- 
-    df_city_vacc_stats_filter %>% 
-    drop_na() %>% 
-    mutate(
-        svi = factor(svi_group, 
-                     levels = c(3, 2, 1),
-                     labels = c("High HDI",
-                                "Medium HDI",
-                                "Low HDI")
-                     )
-        ) %>% 
-    ggplot() +
-    geom_point(aes(x = idhm, y = doses_pop_100_D1_age_sex, color = factor(svi)), size = 0.5) +
-    geom_smooth(aes(x = idhm, y = doses_pop_100_D1_age_sex, group = 1)) +
-    scale_color_discrete(name = "") +
-    labs(
-        x = "Human Development Index (HDI)",
-        y = "Standardised first doses/100 people"
-        ) +
-    theme_classic() +
-    theme(
-        legend.position = "top"
         )
 
 
-
-ggsave("output/plot_city_vacc_hdi.png",
-       plot_city_vacc_hdi,
-       width = 5, height = 4, units = "in", dpi = 800)
 
 
 
@@ -336,7 +142,7 @@ pricare_terms <- c(0, 2.5, 5, 7.5, 10) - mean(df_model_vacc_vars$pricare_cov_10)
 
 model_predict <- ggemmeans(model_vacc_idhm_quartil,
                            terms = c("pricare_cov_10_var[pricare_terms]", "quartil_idhm"), 
-                           params = c("knot_pop", "knot_dist", "knot_gini"))
+                           params = c("knot_dist", "knot_gini"))
 
 avg_city_pop <- mean(df_model_vacc_vars$total_pop[!is.na(df_model_vacc_vars$svi)])
 

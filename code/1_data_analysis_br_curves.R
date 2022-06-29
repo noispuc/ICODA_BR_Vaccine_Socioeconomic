@@ -67,6 +67,12 @@ df_sivep_covid_daily <-
 
 
 
+# df_sivep_covid_daily %>% 
+#     filter(date >= '2021-01-01') %>% 
+#     summarise(
+#         total_adm = sum(hosp_adm),
+#         total_deaths = sum(hosp_deaths)
+#     )
 
 
 
@@ -428,7 +434,7 @@ writexl::write_xlsx(df_vaccine_br_age_sex_uf,
 # shp_state_map <- geobr::read_state()
 # write_rds(shp_state_map, "input/shp_state_brazil_map.rds")
 
-shp_state_map <- read_rds("input/shp_state_brazil_map.rds")
+shp_state_map <- read_rds("data/shp_state_brazil_map.rds")
 
 library(sf)
 
@@ -658,7 +664,7 @@ plot_combined <-
     plot_layout(widths = c(1, 1, 1, 0.5))
 
 
-ggsave("output/plot_combined_descriptive_vacc_sivep_2021-08-31_D1_single.pdf",
+ggsave("output/Figure1_PandemicProgression.pdf",
        plot_combined, units = "in", dpi = 800,
        width = 14, height = 10)
 
